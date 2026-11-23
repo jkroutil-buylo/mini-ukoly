@@ -89,8 +89,12 @@
 
   function mergePeople(local, remote, tombs) {
     return mergeById(local, remote, tombs, (win, l, r) => {
+      // stálé pořadí: podle vzniku, při shodě podle místního pořadí (ne podle náhodného Id)
+      const order = {}; let i = 0;
+      for (const x of l.Points) order[x.Id] = i++;
+      for (const x of r.Points) if (!(x.Id in order)) order[x.Id] = 100000 + i++;
       const pts = mergeById(l.Points, r.Points, tombs, null)
-        .sort((a, b) => cmp(a.Created, b.Created) || cmp(a.Id, b.Id));
+        .sort((a, b) => cmp(a.Created, b.Created) || (order[a.Id] - order[b.Id]));
       const calls = {};
       for (const c of [...l.Calls, ...r.Calls]) if (c && c.Start) calls[c.Start] = c;
       win.Points = pts;
