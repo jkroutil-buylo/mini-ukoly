@@ -770,7 +770,7 @@
           const n = vms.filter(v => v.ok).length;
           out.innerHTML = (r.reads && r.reads.length ? `<div class="small" style="margin:10px 2px 0">V AILO dohledáno: ${esc([...new Set(r.reads)].join(', '))}</div>` : '') +
             (r.ailoAuthError ? '<p style="color:var(--red);margin:8px 2px 0">AILO odmítlo token – vložte nový v nastavení ⚙.</p>' : '') +
-            (r.text ? `<p style="margin:12px 2px 6px;white-space:pre-wrap">${esc(r.text)}</p>` : '') +
+            (r.text ? `<p style="margin:12px 2px 6px;white-space:pre-wrap">${esc(r.text.replace(/\*\*/g, ''))}</p>` : '') +
             vms.map(v => `<div style="background:${v.bg};border-radius:10px;padding:10px 12px;margin-top:8px;display:flex;gap:10px">
               <span style="color:${v.fg};margin-top:1px">${ico(v.icon)}</span><div style="min-width:0;flex:1"><b style="font-size:14.5px">${esc(v.title)}</b>
               ${v.meta ? `<div class="small" style="color:var(--soft)">${esc(v.meta)}</div>` : ''}
