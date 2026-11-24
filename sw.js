@@ -1,6 +1,6 @@
 // Mini Úkoly – aplikace se otevře i bez signálu (data jsou uložená v telefonu, změny se dorovnají po připojení).
-const CACHE = 'miniukoly-v3';
-const SHELL = ['./', 'index.html', 'style.css?v=3', 'config.js?v=3', 'sync.js?v=3', 'app.js?v=3', 'claude.js?v=3', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'miniukoly-v4';
+const SHELL = ['./', 'index.html', 'style.css?v=4', 'config.js?v=4', 'sync.js?v=4', 'app.js?v=4', 'claude.js?v=4', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

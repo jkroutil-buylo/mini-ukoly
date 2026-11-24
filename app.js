@@ -222,7 +222,7 @@
 
   const newest = prefix => Object.keys(S.files).filter(n => n.startsWith(prefix) && n.endsWith('.json')).sort().reverse()[0];
   async function loadExtras() {
-    for (const [prefix, key] of [['prehled', 'brief'], ['zitra-', 'prep'], ['tyden-', 'week']]) {
+    for (const [prefix, key] of [['prehled', 'brief'], ['zitra-', 'prep'], ['tyden-', 'week'], ['ailo-prehled', 'ailo']]) {
       const n = newest(prefix);
       if (!n) { S[key] = null; continue; }
       const mt = n + '|' + S.files[n].mt;
@@ -449,6 +449,20 @@
     } else {
       out.push(`<div class="card"><h2><span class="badge-ico" style="background:var(--clay-l);color:var(--clay)">${ico('sun')}</span>Denní plán od Clauda</h2><p class="muted">Plán zatím nedorazil – rutina ho ukládá ve všední dny kolem 7:00.</p></div>`);
     }
+    // AILO (přehled ukládá počítač na Disk)
+    const ai = S.ailo;
+    if (ai && ai.generatedAt) {
+      const g = parseLocal(ai.generatedAt), old = g && (Date.now() - g) > 6 * 3600e3;
+      const reqs = arr(ai.requests);
+      out.push(`<div class="card"><h2><span class="badge-ico" style="background:#EEF2FF;color:#4338CA">${ico('list')}</span>AILO
+          <span class="meta">${esc(ai.hours || '')}</span></h2>
+        ${ai.timer ? `<div style="background:var(--green-l);color:#166534;border-radius:10px;padding:8px 12px;margin-top:10px;font-weight:600;font-size:14px">● ${esc(ai.timer)}</div>` : ''}
+        ${reqs.map(q => `<div class="row"><div class="body">
+            <button class="linkbtn" data-act="url" data-url="${esc(q.url)}">${esc(q.name)}</button>
+            <div class="chips"><span class="chip" style="background:${esc(q.statusBg)};color:${esc(q.statusFg)}">${esc(q.status)}</span>${q.overdue ? '<span class="chip red">po termínu</span>' : ''}<span class="small">${esc(q.customer || '')}</span></div></div></div>`).join('')}
+        <div class="small" style="margin-top:8px">${ai.count ? ai.count + ' ' + plural(ai.count, 'otevřený požadavek', 'otevřené požadavky', 'otevřených požadavků') + (ai.count > reqs.length ? ' (zobrazeno ' + reqs.length + ' nejnaléhavějších)' : '') : 'Žádné otevřené požadavky.'}
+          · <span style="${old ? 'color:var(--amber)' : ''}">aktualizováno ${g ? formatDay(g) + ' ' + hm(g) : ''} z počítače</span>${MC.getAilo() ? ' · stopky a výkazy přes +' : ''}</div></div>`);
+    }
     // podklady na zítra
     const pr = S.prep, pd = pr && parseDate(pr.date);
     if (pd && dayDiff(pd, new Date()) >= 0 && dayDiff(pd, new Date()) <= 4) {
@@ -632,6 +646,7 @@
     const b = S.brief, bd = b && parseDate(b.date);
     if (bd && dayDiff(bd, d) === 0) { L.push('', 'Dnešní plán od Clauda: ' + (b.summary || '')); for (const s of arr(b.schedule)) if (s) L.push(`- ${s.time} ${s.text}`); }
     L.push('', 'Koncepty e-mailů: v telefonu nejsou načtené (úpravy konceptů jen v počítači).');
+    L.push(MC.getAilo() ? 'AILO: připojeno (čtení rovnou, zápisy přes propose_ailo_action).' : 'AILO: v telefonu není připojené.');
     return L.join('\n');
   }
   function actionVm(a) {
@@ -656,6 +671,15 @@
       case 'create_email_draft': {
         vm.icon = 'mail'; vm.bg = '#FBEDE7'; vm.fg = '#C6613F'; vm.title = 'Nový koncept e-mailu pro ' + i.to; vm.meta = 'Předmět: ' + i.subject + ' · + váš podpis'; vm.body = i.body || '';
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(i.to || '')) { vm.warn = 'Chybí platná e-mailová adresa.'; vm.ok = false; }
+        break;
+      }
+      case 'propose_ailo_action': {
+        vm.icon = 'list'; vm.bg = '#EEF2FF'; vm.fg = '#4338CA';
+        vm.title = 'AILO – ' + (i.summary || i.tool);
+        try { vm.args = JSON.parse(i.arguments_json || '{}'); delete vm.args.dry_run; vm.body = Object.entries(vm.args).map(([k, v]) => k + ': ' + (typeof v === 'object' ? JSON.stringify(v) : v)).join('\n'); }
+        catch (e) { vm.warn = 'Návrh má neplatné údaje.'; vm.ok = false; }
+        vm.meta = 'Zapíše se do AILO až po potvrzení (' + i.tool + ')';
+        if (!MC.getAilo()) { vm.warn = 'AILO není v telefonu připojené (nastavení ⚙).'; vm.ok = false; }
         break;
       }
       default: return null;
@@ -695,6 +719,7 @@
         if (vm.a.name === 'add_task') { newTask({ Text: i.text, Priority: i.priority, Due: parseDate(i.due) ? i.due : '', WaitingFor: i.waiting_for || '', WaitingSince: i.waiting_for ? Y.localDate() : '', Source: 'Claude' }); local++; }
         else if (vm.a.name === 'complete_task') { const t = taskById(i.task_id); if (t) { t.Done = true; local++; } }
         else if (vm.a.name === 'add_discussion_point') { let p = findPerson(i.person); if (!p) p = newPerson(i.person); newPoint(p, i.text); local++; }
+        else if (vm.a.name === 'propose_ailo_action') { await MC.execAilo({ tool: i.tool, args: vm.args }); S.ailoMt = ''; }
         else if (vm.a.name === 'create_calendar_event') {
           const ev = { summary: i.title, description: i.description || '', transparency: 'opaque', reminders: { useDefault: false },
             start: { dateTime: Y.localStamp(vm.start), timeZone: 'Europe/Prague' }, end: { dateTime: Y.localStamp(vm.end), timeZone: 'Europe/Prague' } };
@@ -743,7 +768,9 @@
           const r = await MC.ask(claudeContext(), cmd);
           vms = r.actions.map(actionVm).filter(Boolean);
           const n = vms.filter(v => v.ok).length;
-          out.innerHTML = (r.text ? `<p style="margin:12px 2px 6px;white-space:pre-wrap">${esc(r.text)}</p>` : '') +
+          out.innerHTML = (r.reads && r.reads.length ? `<div class="small" style="margin:10px 2px 0">V AILO dohledáno: ${esc([...new Set(r.reads)].join(', '))}</div>` : '') +
+            (r.ailoAuthError ? '<p style="color:var(--red);margin:8px 2px 0">AILO odmítlo token – vložte nový v nastavení ⚙.</p>' : '') +
+            (r.text ? `<p style="margin:12px 2px 6px;white-space:pre-wrap">${esc(r.text)}</p>` : '') +
             vms.map(v => `<div style="background:${v.bg};border-radius:10px;padding:10px 12px;margin-top:8px;display:flex;gap:10px">
               <span style="color:${v.fg};margin-top:1px">${ico(v.icon)}</span><div style="min-width:0;flex:1"><b style="font-size:14.5px">${esc(v.title)}</b>
               ${v.meta ? `<div class="small" style="color:var(--soft)">${esc(v.meta)}</div>` : ''}
@@ -769,6 +796,10 @@
       <input type="password" id="s_key" placeholder="${has ? '•••••••• (vložte nový pro změnu)' : 'sk-ant-…'}" autocomplete="off" style="margin-top:8px">
       <div class="pills" style="margin-top:8px"><button type="button" class="pill" data-s="savekey">Uložit klíč</button>${has ? '<button type="button" class="pill" data-s="delkey">Odebrat klíč</button>' : ''}
         <button type="button" class="pill" data-s="console">Claude Console ↗</button></div>
+      <label>AILO</label>
+      <div class="hint" style="margin-top:0">${MC.getAilo() ? 'Token AILO je uložený v tomto telefonu – kouzelné pole umí požadavky, výkazy a stopky.' : 'Aby kouzelné pole umělo AILO (požadavky, výkazy, stopky), vložte token z AILO → Nastavení → ailo connect. Uloží se jen v tomto telefonu.'}</div>
+      <input type="password" id="s_ailo" placeholder="${MC.getAilo() ? '•••••••• (vložte nový pro změnu)' : 'ailo_…'}" autocomplete="off" style="margin-top:8px">
+      <div class="pills" style="margin-top:8px"><button type="button" class="pill" data-s="saveailo">Uložit token</button>${MC.getAilo() ? '<button type="button" class="pill" data-s="delailo">Odebrat token</button>' : ''}</div>
       <label>Google účet</label>
       <div class="hint" style="margin-top:0">${S.scopesVer === SCOPES_VER ? 'Disk, Gmail i kalendář jsou povolené.' : 'Pro zakládání událostí a konceptů e-mailů je potřeba jednou znovu přihlásit a povolit kalendář a Gmail.'}</div>
       <div class="pills" style="margin-top:8px"><button type="button" class="pill" data-s="relogin">Přihlásit znovu</button></div>
@@ -779,6 +810,8 @@
         const k = bg.querySelector('#s_key').value.trim();
         if (b.dataset.s === 'savekey') { if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(k)) { toast('Tohle nevypadá jako API klíč Claude (sk-ant-…)'); return; } MC.setKey(k); closeSheet(); toast('Claude je zapnutý – klepněte na +'); }
         else if (b.dataset.s === 'delkey') { MC.setKey(''); closeSheet(); toast('Klíč odebrán'); }
+        else if (b.dataset.s === 'saveailo') { const a = bg.querySelector('#s_ailo').value.trim(); if (!/^ailo_[A-Za-z0-9_\-]{10,}$/.test(a)) { toast('Tohle nevypadá jako token AILO (ailo_…)'); return; } MC.setAilo(a); closeSheet(); toast('AILO je připojené'); }
+        else if (b.dataset.s === 'delailo') { MC.setAilo(''); closeSheet(); toast('Token AILO odebrán'); }
         else if (b.dataset.s === 'console') window.open('https://console.anthropic.com/settings/keys', '_blank', 'noopener');
         else if (b.dataset.s === 'relogin') { S.scopesVer = 1; closeSheet(); login(); }
       });
